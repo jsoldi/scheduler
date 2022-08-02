@@ -88,9 +88,16 @@ export class Entry {
     }
 }
 
+type EntryFilter = (entry: Entry, date: Date) => boolean;
+
 export class Schedule {
     private static readonly wait_time = 5000;
-    constructor(public readonly entries: Entry[]) { }
+
+    constructor(public readonly entries: Entry[], public readonly entryFilter: EntryFilter = () => true) { }
+
+    public filter(filter: EntryFilter) {
+        return new Schedule(this.entries, (...args) => this.entryFilter(...args) && filter(...args));
+    }
 
     static delay(ms: number) {
         return new Promise(a => setTimeout(a, ms));
@@ -135,9 +142,10 @@ export class Schedule {
         }
     }
 
-    async * waitForAll(): AsyncGenerator<Entry> {
+    async * waitForAll(): AsyncGenerator<[Entry, Date]> {
         for await (let minute of Schedule.minuteLoop()) {
-            yield* this.inMinute(minute);
+            for (let entry of this.inMinute(minute)) 
+                yield [entry, minute];
         }
     }
 
@@ -152,8 +160,9 @@ export class Schedule {
     }
 
     async run(acceptEntry: (result: string) => void = () => { }, rejectEntry: (error: Error) => void = () => { }) {
-        for await (let entry of this.waitForAll()) {
-            entry.run().then(acceptEntry, rejectEntry);
+        for await (let [entry, date] of this.waitForAll()) {
+            if (this.entryFilter(entry, date)) 
+                entry.run().then(acceptEntry, rejectEntry);
         }
     }
 }

@@ -71,8 +71,12 @@ export class Entry {
 Entry.runningItems = new Set();
 Entry.MAX_LINE_LENGTH = 80;
 export class Schedule {
-    constructor(entries) {
+    constructor(entries, entryFilter = () => true) {
         this.entries = entries;
+        this.entryFilter = entryFilter;
+    }
+    filter(filter) {
+        return new Schedule(this.entries, (...args) => this.entryFilter(...args) && filter(...args));
     }
     static delay(ms) {
         return new Promise(a => setTimeout(a, ms));
@@ -109,7 +113,8 @@ export class Schedule {
     }
     async *waitForAll() {
         for await (let minute of Schedule.minuteLoop()) {
-            yield* this.inMinute(minute);
+            for (let entry of this.inMinute(minute))
+                yield [entry, minute];
         }
     }
     toString(lineLength = Entry.MAX_LINE_LENGTH) {
@@ -121,8 +126,9 @@ export class Schedule {
         return new Schedule(this.entries.map(e => e.moveBy(minutes)));
     }
     async run(acceptEntry = () => { }, rejectEntry = () => { }) {
-        for await (let entry of this.waitForAll()) {
-            entry.run().then(acceptEntry, rejectEntry);
+        for await (let [entry, date] of this.waitForAll()) {
+            if (this.entryFilter(entry, date))
+                entry.run().then(acceptEntry, rejectEntry);
         }
     }
 }
